@@ -3412,6 +3412,116 @@
       }, space ),
 
       /**
+       * transforms SVG to a SVG Element and replaces placeholders (recursive)
+       * @param svg
+       * @param values
+       * @param settings
+       * @returns {Element|Element[]} SVG Element
+       */
+      svg: function ( svg, values, settings ) {
+        // handle advanced settings
+        let advanced = {};
+        if ( self.helper.isObject( settings ) ) {
+          advanced = settings;
+          settings = undefined;
+        }
+
+        // convert HTML to ccm HTML data
+        svg = self.helper.html2json( svg );
+
+        // clone HTML data
+        svg = self.helper.clone( svg );
+
+        // replace placeholder
+        if ( values !== undefined ) svg = self.helper.format.apply( this, arguments );
+
+        // get more than one SVG tag?
+        if ( Array.isArray( svg ) ) {
+
+          // generate each SVG tag
+          const result = [];
+          for ( let i = 0; i < html.length; i++ )
+            result.push( self.helper.svg( svg[ i ], undefined, advanced ) );  // recursive call
+          return result;
+
+        }
+
+        // get no ccm svg data? => return parameter value
+        if ( typeof svg !== 'object' || svg === null ) return svg;
+
+        /**
+         * SVG tag
+         * @type {ccm.types.element}
+         */
+        const element = document.createElementNS('http://www.w3.org/2000/svg', self.helper.htmlEncode( svg.tag ) );
+
+        // remove 'tag' and 'key' property
+        delete svg.tag; if ( !self.helper.regex( 'json' ).test( svg.key ) ) delete svg.key;
+
+        // iterate over ccm svg data properties
+        for ( const key in svg ) {
+
+          /**
+           * value of ccm html data property
+           * @type {string|ccm.types.html|Array}
+           */
+          const value = svg[ key ];
+
+          // interpret ccm html data property
+          switch ( key ) {
+
+              // HTML boolean attributes
+            case 'async':
+            case 'autofocus':
+            case 'checked':
+            case 'defer':
+            case 'disabled':
+            case 'ismap':
+            case 'multiple':
+            case 'required':
+            case 'selected':
+              if ( value ) element[ key ] = true;
+              break;
+            case 'readonly':
+              if ( value ) element.readOnly = true;
+              break;
+
+              // inner SVG
+            case 'inner':
+              if ( typeof value === 'string' || typeof value === 'number' ) { element.innerHTML = value; break; }
+              let children = this.svg( value, undefined, advanced );  // recursive call
+              if ( !Array.isArray( children ) )
+                children = [ children ];
+              for ( let i = 0; i < children.length; i++ )
+                if ( self.helper.isNode( children[ i ] ) )
+                  element.appendChild( children[ i ] );
+                else
+                  element.innerHTML += children[ i ];
+              break;
+
+              // SVG value attributes and events
+            default:
+              if ( key.indexOf( 'on' ) === 0 && typeof value === 'function' )               // is SVG event
+                element.addEventListener( key.substr( 2 ), value );
+              else                                                                          // is SVG value attribute
+                element.setAttribute( key, self.helper.htmlEncode( value, true, false ) );
+          }
+
+        }
+
+        // is ccm HTML Element of registered component and evaluation is not skipped? => evaluate ccm HTML Element
+        if ( element.tagName.startsWith( 'CCM-' ) && !advanced.no_evaluation ) {
+          const config = self.helper.generateConfig( element );
+          config.root = element;
+          self.start( element.tagName === 'CCM-APP' ? element.getAttribute( 'component' ) : element.tagName.substr( 4 ).toLowerCase(), config );
+        }
+
+        // return generated HTML
+        return self.helper.protect( element );
+
+      },
+
+      /**
        * transforms an object with deeper structure to a flat object with dot notation in each key as path to deeper properties
        * @param {Object} obj - object
        * @param {boolean} [all_levels] - result contains all levels of dot notation
